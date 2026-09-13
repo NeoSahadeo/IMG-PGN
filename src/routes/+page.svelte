@@ -1,18 +1,23 @@
 <script lang="ts">
-	import { example_pgn } from '$lib';
+	import { onMount } from 'svelte';
+
+	onMount(() => {
+		document.title = 'IMG PGN';
+	});
+
 	let canvas_element = $state<HTMLCanvasElement>();
 	let files = $state<FileList | null | undefined>(null);
 
 	let final_pgn = $state('');
-	let image_size_mono = 25;
-	let image_size = $state({
+	let image_size_mono = $state(10);
+	let image_size = $derived({
 		height: image_size_mono,
 		width: image_size_mono
 	});
 
-	const pretext = `[Variant "From Position"]<br>
-	[FEN "7r/6pk/6r1/8/8/6R1/6PK/RrRrRr1R w - - 0 1"]<br>
-	`;
+	const pretext = $derived(
+		`[Event "${image_size_mono}x${image_size_mono}"]\n[Variant "From Position"]\n[FEN "7r/6pk/6r1/8/8/6R1/6PK/RrRrRr1R w - - 0 1"]\n`
+	);
 
 	class EncodeSpecial {
 		private g_rook_white;
@@ -130,15 +135,26 @@
 
 			output.push(pgn);
 		}
-		final_pgn = output.join(' ');
+		return output.join(' ');
 	}
 
 	function read_image(pgn: string) {
 		const segments = pgn.split('\n');
 		const index = (() => {
-			for (let x = 0; x < segments.length; x++) if (segments[x].match(/^\s*1. /)) return x;
+			let i = 0;
+			for (let x = 0; x < segments.length; x++) {
+				if (segments[x].includes('Event')) {
+					const m = segments[x].match(/Event "(\d+)x(\d+)"/);
+					try {
+						if (m) image_size_mono = parseInt(m[1]);
+					} catch {}
+				}
+				if (segments[x].match(/^\s*1. /)) i = x;
+			}
+			return i;
 		})() as number;
-		const data = segments[index];
+		const data_blocks = segments.slice(index, segments.length);
+		const data = data_blocks.join(' ');
 		const objs = data.matchAll(/\d+\. \S+ \S+/gm);
 
 		let a_rook = 1;
@@ -239,8 +255,7 @@
 
 	function load_image() {
 		if (!canvas_element) return;
-		const pixels = read_image(example_pgn);
-		// console.log(pixels);
+		const pixels = read_image(final_pgn);
 		const ctx = canvas_element.getContext('2d');
 		if (!ctx) return;
 
@@ -271,20 +286,46 @@
 			const clean_pixels = image_data.data.filter(
 				(_, index) => (index + 1) % 4 !== 0
 			) as any as Array<number>;
-			generate_moves(clean_pixels);
+			final_pgn = generate_moves(clean_pixels);
 
-			ctx.clearRect(0, 0, image_size.width, image_size.height);
-			ctx.drawImage(img, 0, 0, image_size.width, image_size.height);
+			load_image();
 		};
 	});
 </script>
 
-<input bind:files type="file" />
-<button onclick={load_image}>Load Image</button>
-<canvas bind:this={canvas_element} class="bg-black"> IMAGE CANVAS PREVIEW </canvas>
-<div>
+<label for="file_input" class="rounded bg-green-400 px-3 py-1"> Select Image </label>
+<input id="file_input" bind:files type="file" hidden />
+<fieldset class="flex max-w-sm flex-col rounded border-1 px-3 py-2">
+	<label for="res_select"> Resolution: {image_size_mono}px </label>
+	<input type="number" min="1" max="500" bind:value={image_size_mono} />
+	<input id="res_select" type="range" min="1" max="500" bind:value={image_size_mono} />
+	<div>
+		PGN Length: {image_size_mono * image_size_mono * 3}
+		<br />
+		File Size:{#if final_pgn}
+			~{Math.ceil(final_pgn.length / 1000)}KiB{/if}
+	</div>
+</fieldset>
+<canvas bind:this={canvas_element} class="rounded-sm border-2 bg-black">
+	IMAGE CANVAS PREVIEW
+</canvas>
+<div class="max-w-sm">
 	<h2>PGN:</h2>
-	<span class="max-h-20 overflow-y-scroll">
-		{@html final_pgn}
-	</span>
+	<textarea
+		class="max-h-20 min-h-20 overflow-y-scroll whitespace-pre-line"
+		contenteditable="true"
+		bind:value={final_pgn}></textarea>
+</div>
+<div>
+	<button
+		class="rounded bg-amber-400 px-3 py-1"
+		onclick={() => {
+			navigator.clipboard.writeText(final_pgn);
+		}}
+	>
+		Copy PGN to Clipboard
+	</button>
+</div>
+<div>
+	<button class="rounded bg-blue-400 px-3 py-1" onclick={load_image}>Load From PGN</button>
 </div>
