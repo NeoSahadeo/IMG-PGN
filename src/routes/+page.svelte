@@ -1,14 +1,19 @@
 <script lang="ts">
+	import ArrowLeftRight from '$lib/icons/ArrowLeftRight.svelte';
+	import { example_pgn } from '$lib/index';
 	import { onMount } from 'svelte';
+	const WIDTH = 200;
+	const HEIGHT = 200;
 
 	onMount(() => {
 		document.title = 'IMG PGN';
+		load_image();
 	});
 
 	let canvas_element = $state<HTMLCanvasElement>();
 	let files = $state<FileList | null | undefined>(null);
 
-	let final_pgn = $state('');
+	let final_pgn = $state(example_pgn);
 	let image_size_mono = $state(10);
 	let image_size = $derived({
 		height: image_size_mono,
@@ -143,19 +148,26 @@
 		const index = (() => {
 			let i = 0;
 			for (let x = 0; x < segments.length; x++) {
-				if (segments[x].includes('Event')) {
-					const m = segments[x].match(/Event "(\d+)x(\d+)"/);
-					try {
-						if (m) image_size_mono = parseInt(m[1]);
-					} catch {}
-				}
+				// if (segments[x].includes('Event')) {
+				// 	const m = segments[x].match(/Event "(\d+)x(\d+)"/);
+				// 	try {
+				// 		if (m) image_size_mono = parseInt(m[1]);
+				// 	} catch {}
+				// }
 				if (segments[x].match(/^\s*1. /)) i = x;
 			}
 			return i;
 		})() as number;
-		const data_blocks = segments.slice(index, segments.length);
-		const data = data_blocks.join(' ');
-		const objs = data.matchAll(/\d+\. \S+ \S+/gm);
+		// console.log(segments[index]);
+		// const data_blocks = segments.slice(index, segments.length);
+		const data = segments[index];
+		// const data = data_blocks.join(' ');
+		let objs = data.matchAll(/\d+\. \S+ \S+/gm);
+		let count = 0;
+		objs.forEach((e) => {
+			count++;
+		});
+		image_size_mono = Math.sqrt(count / 3);
 
 		let a_rook = 1;
 		let b_rook = 1;
@@ -170,7 +182,7 @@
 		let blue = 0;
 
 		const ratio = Math.floor(255 / 16);
-
+		objs = data.matchAll(/\d+\. \S+ \S+/gm);
 		objs.forEach((v, index) => {
 			const mod = index % 3;
 			const _match = v[0].match(/(\S+) (\S+)$/);
@@ -259,13 +271,19 @@
 		const ctx = canvas_element.getContext('2d');
 		if (!ctx) return;
 
-		canvas_element.height = image_size.height;
-		canvas_element.width = image_size.width;
+		const temp = document.createElement('canvas');
+		temp.width = image_size.width;
+		temp.height = image_size.height;
 
-		const image_data = ctx.createImageData(image_size.width, image_size.height);
+		const temp_ctx = temp.getContext('2d');
+		if (!temp_ctx) return;
+
+		const image_data = temp_ctx.createImageData(image_size.width, image_size.height);
 		image_data.data.set(pixels);
+		temp_ctx.putImageData(image_data, 0, 0);
 
-		ctx.putImageData(image_data, 0, 0);
+		ctx.clearRect(0, 0, canvas_element.width, canvas_element.height);
+		ctx.drawImage(temp, 0, 0, canvas_element.width, canvas_element.height);
 	}
 
 	$effect(() => {
@@ -276,10 +294,17 @@
 
 		const img = new Image();
 		img.src = URL.createObjectURL(files[0]);
-		canvas_element.height = image_size.height;
-		canvas_element.width = image_size.width;
+		// canvas_element.height = HEIGHT;
+		// canvas_element.width = WIDTH;
 		img.onload = function () {
-			ctx.drawImage(img, 0, 0, image_size.width, image_size.height);
+			if (!canvas_element) return;
+			// const scale = Math.min(canvas_element.width / img.width, canvas_element.height / img.height);
+			// const width = img.width * scale;
+			// const height = img.height * scale;
+			// const x = (canvas_element.width - width) / 2;
+			// const y = (canvas_element.height - height) / 2;
+			// ctx.clearRect(0, 0, canvas_element.width, canvas_element.height);
+			ctx.drawImage(img, x, y, width, height);
 
 			// format is RGBA :(
 			const image_data = ctx.getImageData(0, 0, image_size.width, image_size.height);
@@ -293,39 +318,62 @@
 	});
 </script>
 
-<label for="file_input" class="rounded bg-green-400 px-3 py-1"> Select Image </label>
-<input id="file_input" bind:files type="file" hidden />
-<fieldset class="flex max-w-sm flex-col rounded border-1 px-3 py-2">
-	<label for="res_select"> Resolution: {image_size_mono}px </label>
-	<input type="number" min="1" max="500" bind:value={image_size_mono} />
-	<input id="res_select" type="range" min="1" max="500" bind:value={image_size_mono} />
-	<div>
-		PGN Length: {image_size_mono * image_size_mono * 3}
-		<br />
-		File Size:{#if final_pgn}
-			~{Math.ceil(final_pgn.length / 1000)}KiB{/if}
+<div class="glass flex flex-col items-center justify-center rounded-lg px-3 py-5">
+	<h1 class="text-5xl font-bold">Image to PGN</h1>
+	<p class="italic">Convert images to chess PGN and back!</p>
+
+	<div class="mt-4 flex flex-row items-center justify-center gap-3">
+		<div class="flex w-auto flex-col gap-2">
+			<canvas
+				onclick={() => {
+					(document.querySelector('#file_input') as any).click();
+				}}
+				bind:this={canvas_element}
+				width="200"
+				height="200"
+				class="glass cursor-pointer rounded-sm"
+			>
+				IMAGE CANVAS PREVIEW
+			</canvas>
+		</div>
+		<ArrowLeftRight />
+		<div class="flex flex-col gap-2">
+			<textarea
+				style:width={`${WIDTH}px`}
+				style:height={`${HEIGHT}px`}
+				class="resize-none overflow-y-scroll border-1 whitespace-pre-line"
+				contenteditable="true"
+				bind:value={final_pgn}></textarea>
+		</div>
 	</div>
-</fieldset>
-<canvas bind:this={canvas_element} class="rounded-sm border-2 bg-black">
-	IMAGE CANVAS PREVIEW
-</canvas>
-<div class="max-w-sm">
-	<h2>PGN:</h2>
-	<textarea
-		class="max-h-20 min-h-20 overflow-y-scroll whitespace-pre-line"
-		contenteditable="true"
-		bind:value={final_pgn}></textarea>
-</div>
-<div>
-	<button
-		class="rounded bg-amber-400 px-3 py-1"
-		onclick={() => {
-			navigator.clipboard.writeText(final_pgn);
-		}}
-	>
-		Copy PGN to Clipboard
-	</button>
-</div>
-<div>
-	<button class="rounded bg-blue-400 px-3 py-1" onclick={load_image}>Load From PGN</button>
+	<div class="mt-2 flex w-full flex-row justify-between">
+		<div style:width={`${WIDTH}px`}>
+			<label for="file_input" class="w-fit rounded bg-green-400 px-3 py-1"> Select Image </label>
+			<input id="file_input" bind:files type="file" hidden />
+		</div>
+		<div class="flex flex-col gap-2" style:width={`${WIDTH}px`}>
+			<button class="w-fit rounded bg-blue-400 px-3 py-1" onclick={load_image}>Load From PGN</button
+			>
+			<button
+				class="w-fit rounded bg-amber-400 px-3 py-1"
+				onclick={() => {
+					navigator.clipboard.writeText(final_pgn);
+				}}
+			>
+				Copy PGN to Clipboard
+			</button>
+		</div>
+	</div>
+
+	<fieldset class="flex max-w-sm flex-col rounded border-1 px-3 py-2">
+		<label for="res_select"> Resolution: {image_size_mono}px </label>
+		<input type="number" min="1" max="500" bind:value={image_size_mono} />
+		<input id="res_select" type="range" min="1" max="500" bind:value={image_size_mono} />
+		<div>
+			PGN Length: {image_size_mono * image_size_mono * 3}
+			<br />
+			File Size:{#if final_pgn}
+				~{Math.ceil(final_pgn.length / 1000)}KiB{/if}
+		</div>
+	</fieldset>
 </div>
